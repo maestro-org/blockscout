@@ -54,6 +54,7 @@ services:
       dockerfile: ./docker/Dockerfile
       args:
         RELEASE_VERSION: 6.10.0
+        CHAIN_TYPE: midl
         DISABLE_INDEXER: "false"
         DISABLE_API: "false"
         BLOCKSCOUT_VERSION: "6.10.0"
