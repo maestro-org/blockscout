@@ -5610,7 +5610,7 @@ defmodule Explorer.Chain do
   Returns a single `AddressesMap` row by matching the `eth_address` field.
   Returns `nil` if none is found.
   """
-  def get_addresses_map_by_eth_address(eth_address_string, opts \\ []) do
+  def get_addresses_map_by_eth_address(eth_address_string, _opts \\ []) do
     from(am in AddressesMap,
       # fragment("LOWER(?) = LOWER(?)", am.eth_address, ^eth_address_string)
       where: am.eth_address == ^eth_address_string
@@ -5622,7 +5622,7 @@ defmodule Explorer.Chain do
   Returns a single `AddressesMap` row by matching the `btc_address` field.
   Returns `nil` if none is found.
   """
-  def get_addresses_map_by_btc_address(btc_address_string, opts \\ []) when is_binary(btc_address_string) do
+  def get_addresses_map_by_btc_address(btc_address_string, _opts \\ []) when is_binary(btc_address_string) do
     from(am in AddressesMap,
       where: am.btc_address == ^btc_address_string
     )

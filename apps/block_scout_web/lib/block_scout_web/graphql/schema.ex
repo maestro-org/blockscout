@@ -14,6 +14,7 @@ defmodule BlockScoutWeb.GraphQL.Schema do
     Address,
     Block,
     InternalTransaction,
+    TokenBalance,
     TokenTransfer,
     Transaction
   }

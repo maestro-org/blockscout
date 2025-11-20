@@ -12,6 +12,17 @@ defmodule BlockScoutWeb.GraphQL.Schema.Transaction do
                            ]
                          )
 
+    :midl ->
+      @chain_type_fields quote(
+                           do: [
+                             field(:btc_tx_hash, :full_hash),
+                             field(:public_key, :full_hash),
+                             field(:btc_address_byte, :decimal),
+                             field(:btc_address, :string),
+                             field(:eth_address, :address_hash)
+                           ]
+                         )
+
     _ ->
       @chain_type_fields quote(do: [])
   end
@@ -117,6 +128,7 @@ defmodule BlockScoutWeb.GraphQL.Schema.Types do
 
   alias BlockScoutWeb.GraphQL.Resolvers.{
     Token,
+    TokenBalance,
     TokenTransfer,
     Transaction
   }
@@ -130,6 +142,7 @@ defmodule BlockScoutWeb.GraphQL.Schema.Types do
   connection(node_type: :transaction)
   connection(node_type: :internal_transaction)
   connection(node_type: :token_transfer)
+  connection(node_type: :token_balance)
 
   @desc """
   A stored representation of a Web3 address.
@@ -143,6 +156,10 @@ defmodule BlockScoutWeb.GraphQL.Schema.Types do
     field(:gas_used, :integer)
     field(:transactions_count, :integer)
     field(:token_transfers_count, :integer)
+
+    field :btc_address, :string do
+      resolve(&BlockScoutWeb.GraphQL.Resolvers.Address.get_btc_address/3)
+    end
 
     field :smart_contract, :smart_contract do
       resolve(dataloader(:db, :smart_contract))
@@ -161,6 +178,21 @@ defmodule BlockScoutWeb.GraphQL.Schema.Types do
       resolve(&TokenTransfer.get_by/3)
 
       complexity(fn params, child_complexity -> process_complexity(params, child_complexity) end)
+    end
+
+    connection field(:token_balances, node_type: :token_balance) do
+      arg(:count, :integer)
+      arg(:include_zero_balances, :boolean, default_value: false)
+      resolve(&TokenBalance.get_by/3)
+
+      complexity(fn params, child_complexity ->
+        # Cap complexity at 100 to prevent expensive queries
+        case params do
+          %{first: first} -> min(100, first * child_complexity)
+          %{last: last} -> min(100, last * child_complexity)
+          _ -> 50
+        end
+      end)
     end
   end
 
@@ -259,6 +291,21 @@ defmodule BlockScoutWeb.GraphQL.Schema.Types do
     field(:icon_url, :string)
     field(:volume_24h, :decimal)
     field(:contract_address_hash, :address_hash)
+  end
+
+  @desc """
+  Represents the current token balance for an address.
+  """
+  object :token_balance do
+    field(:value, :decimal)
+    field(:token_contract_address_hash, :address_hash)
+    field(:block_number, :integer)
+    field(:token_type, :string)
+    field(:token_id, :decimal)
+
+    field :token, :token do
+      resolve(dataloader(:db, :token))
+    end
   end
 
   @desc """
