@@ -63,6 +63,14 @@ defmodule BlockScoutWeb.API.V2.TransactionController do
         :gas_token => :optional
       }
 
+    :midl ->
+      @chain_type_transaction_necessity_by_association %{
+        :intents => :optional,
+        :completion_transaction => :optional,
+        :initiation_transaction => :optional,
+        :committed_send_event => :optional
+      }
+
     _ ->
       @chain_type_transaction_necessity_by_association %{}
   end

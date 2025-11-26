@@ -11,6 +11,7 @@ defmodule Explorer.Chain.Transaction.Schema do
 
   alias Explorer.Chain.{
     Address,
+    AddressesMap,
     Beacon.BlobTransaction,
     Block,
     CompletionTransaction,
@@ -61,6 +62,11 @@ defmodule Explorer.Chain.Transaction.Schema do
                               has_one(:committed_send_event, CommittedSentEvent,
                                 foreign_key: :btc_dapp_tx,
                                 references: :btc_tx_hash
+                              )
+
+                              has_one(:addresses_map, AddressesMap,
+                                foreign_key: :public_key,
+                                references: :public_key
                               )
 
                             end,
