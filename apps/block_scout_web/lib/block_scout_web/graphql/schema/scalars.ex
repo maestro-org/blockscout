@@ -59,6 +59,28 @@ defmodule BlockScoutWeb.GraphQL.Schema.Scalars do
   end
 
   @desc """
+  A Bitcoin transaction hash (32-byte SHA-256 hash) without 0x prefix.
+  """
+  scalar :btc_hash do
+    parse(fn
+      %Absinthe.Blueprint.Input.String{value: value} ->
+        # Accept both with and without 0x prefix
+        cleaned_value = String.replace_prefix(value, "0x", "")
+        Hash.cast(Full, "0x" <> cleaned_value)
+
+      _ ->
+        :error
+    end)
+
+    serialize(fn hash ->
+      # Remove 0x prefix from Bitcoin hashes
+      hash
+      |> to_string()
+      |> String.replace_prefix("0x", "")
+    end)
+  end
+
+  @desc """
   The nonce (16 (hex) characters / 128 bits / 8 bytes) is derived from the Proof-of-Work.
   """
   scalar :nonce_hash do
