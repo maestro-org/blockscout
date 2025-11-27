@@ -69,19 +69,22 @@ defmodule BlockScoutWeb.API.V2.MidlView do
 
     completion_tx =
       case Map.get(transaction, :completion_transaction) do
-        %{} = completion_transaction -> completion_transaction.completion_tx
+        %Ecto.Association.NotLoaded{} -> nil
+        %{completion_tx: tx} -> tx
         _ -> nil
       end
 
     initiation_tx =
       case Map.get(transaction, :initiation_transaction) do
-        %{} = initiation_transaction -> initiation_transaction.initiation_tx
+        %Ecto.Association.NotLoaded{} -> nil
+        %{initiation_tx: tx} -> tx
         _ -> nil
       end
 
     btc_result_tx =
       case Map.get(transaction, :committed_send_event) do
-        %{} = committed_send_event -> committed_send_event.btc_result_tx
+        %Ecto.Association.NotLoaded{} -> nil
+        %{btc_result_tx: tx} -> tx
         _ -> nil
       end
 
@@ -104,6 +107,7 @@ defmodule BlockScoutWeb.API.V2.MidlView do
   end
 
   defp map_intents(nil), do: []
+  defp map_intents(%Ecto.Association.NotLoaded{}), do: []
 
   defp map_intents(intents) when is_list(intents) do
     Enum.map(intents, &map_intent_transaction/1)

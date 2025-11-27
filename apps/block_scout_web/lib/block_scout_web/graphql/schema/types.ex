@@ -15,11 +15,74 @@ defmodule BlockScoutWeb.GraphQL.Schema.Transaction do
     :midl ->
       @chain_type_fields quote(
                            do: [
-                             field(:btc_tx_hash, :full_hash),
+                             field(:btc_tx_hash, :btc_hash),
                              field(:public_key, :full_hash),
                              field(:btc_address_byte, :decimal),
-                             field(:btc_address, :string),
-                             field(:eth_address, :address_hash)
+
+                             # BTC address from addresses_map via dataloader
+                             field :btc_address, :string do
+                               resolve(dataloader(:db, :addresses_map, fn addresses_map, _, _ ->
+                                 case addresses_map do
+                                   %{btc_address: btc_address} -> {:ok, btc_address}
+                                   _ -> {:ok, nil}
+                                 end
+                               end))
+                             end,
+
+                             # ETH address from addresses_map via dataloader
+                             field :eth_address, :address_hash do
+                               resolve(dataloader(:db, :addresses_map, fn addresses_map, _, _ ->
+                                 case addresses_map do
+                                   %{eth_address: eth_address} -> {:ok, eth_address}
+                                   _ -> {:ok, nil}
+                                 end
+                               end))
+                             end,
+
+                             # MIDL transaction event associations
+                             field :initiation_transaction, :initiation_transaction do
+                               resolve(dataloader(:db, :initiation_transaction))
+                               complexity(2)
+                             end,
+
+                             field :completion_transaction, :completion_transaction do
+                               resolve(dataloader(:db, :completion_transaction))
+                               complexity(2)
+                             end,
+
+                             field :committed_send_event, :committed_send_event do
+                               resolve(dataloader(:db, :committed_send_event))
+                               complexity(2)
+                             end,
+
+                             # Intents connection - transactions with same btc_tx_hash
+                             connection field(:intents, node_type: :transaction) do
+                               arg(:count, :integer)
+
+                               resolve(fn transaction, args, resolution ->
+                                 case transaction.btc_tx_hash do
+                                   nil ->
+                                     {:ok, %{edges: [], page_info: %{has_next_page: false, has_previous_page: false}}}
+
+                                   btc_tx_hash ->
+                                     query =
+                                       from(t in Explorer.Chain.Transaction,
+                                         where: t.btc_tx_hash == ^btc_tx_hash,
+                                         order_by: [asc: t.block_number, asc: t.index]
+                                       )
+
+                                     Absinthe.Relay.Connection.from_query(query, &Explorer.Repo.all/1, args)
+                                 end
+                               end)
+
+                               complexity(fn params, child_complexity ->
+                                 case params do
+                                   %{first: first} -> min(50, first * child_complexity)
+                                   %{last: last} -> min(50, last * child_complexity)
+                                   _ -> 20
+                                 end
+                               end)
+                             end
                            ]
                          )
 
@@ -125,6 +188,7 @@ defmodule BlockScoutWeb.GraphQL.Schema.Types do
   use Absinthe.Relay.Schema.Notation, :modern
 
   import Absinthe.Resolution.Helpers
+  import Ecto.Query, only: [from: 2]
 
   alias BlockScoutWeb.GraphQL.Resolvers.{
     Token,
@@ -242,6 +306,33 @@ defmodule BlockScoutWeb.GraphQL.Schema.Types do
     field(:transaction_index, :integer)
     field(:block_hash, :full_hash)
     field(:block_index, :integer)
+  end
+
+  @desc """
+  MIDL initiation transaction mapping.
+  """
+  object :initiation_transaction do
+    field(:btc_dapp_tx, :btc_hash)
+    field(:initiation_tx, :full_hash)
+  end
+
+  @desc """
+  MIDL completion transaction mapping.
+  """
+  object :completion_transaction do
+    field(:btc_dapp_tx, :btc_hash)
+    field(:completion_tx, :full_hash)
+    field(:sender, :address_hash)
+  end
+
+  @desc """
+  MIDL committed send event.
+  """
+  object :committed_send_event do
+    field(:btc_dapp_tx, :btc_hash)
+    field(:committed_event_tx, :full_hash)
+    field(:btc_result_tx, :btc_hash)
+    field(:receiver, :address_hash)
   end
 
   @desc """
