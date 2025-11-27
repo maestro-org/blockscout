@@ -1,0 +1,9 @@
+#!/bin/sh
+
+set -e
+
+[ "$(git branch --show-current)" = "maestro" ] || SUFFIX="-dev"
+cat << EOF > "${GITHUB_OUTPUT}"
+image=us-central1-docker.pkg.dev/maestro-org-development/dapp-developer-platform-midl/$(basename "${PWD}")${SUFFIX}
+version=$("$(dirname $0)"/version)
+EOF
