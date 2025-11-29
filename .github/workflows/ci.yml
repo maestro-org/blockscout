@@ -43,5 +43,7 @@ jobs:
         with:
           file: docker/Dockerfile
           platforms: linux/amd64
+          build-args: |
+            RELEASE_VERSION=6.10.0
           push: ${{ github.ref_name == 'maestro' }}
           tags: ${{ steps.vars.outputs.image }}:${{ steps.vars.outputs.version }}
