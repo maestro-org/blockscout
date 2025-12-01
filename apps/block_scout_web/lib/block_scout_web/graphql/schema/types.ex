@@ -218,8 +218,18 @@ defmodule BlockScoutWeb.GraphQL.Schema.Types do
     field(:contract_code, :data)
     field(:nonce, :integer)
     field(:gas_used, :integer)
-    field(:transactions_count, :integer)
-    field(:token_transfers_count, :integer)
+
+    field :transactions_count, :integer do
+      resolve(fn address, _, _ ->
+        {:ok, address.transactions_count}
+      end)
+    end
+
+    field :token_transfers_count, :integer do
+      resolve(fn address, _, _ ->
+        {:ok, address.token_transfers_count}
+      end)
+    end
 
     field :btc_address, :string do
       resolve(&BlockScoutWeb.GraphQL.Resolvers.Address.get_btc_address/3)
