@@ -12,6 +12,7 @@ defmodule BlockScoutWeb.API.V2.TokenController do
   import BlockScoutWeb.Chain,
     only: [
       split_list_by_page: 1,
+      split_list_by_page: 2,
       paging_options: 1,
       next_page_params: 3,
       token_transfers_next_page_params: 3,
@@ -295,20 +296,20 @@ defmodule BlockScoutWeb.API.V2.TokenController do
   def tokens_list(conn, params) do
     filter = params["q"]
 
+    parsed_limit = Helper.parse_integer(params["limit"])
+    page_size = if parsed_limit && parsed_limit > 0, do: min(50, parsed_limit), else: 50
+
     options =
       params
       |> paging_options()
-      |> Keyword.update(:paging_options, default_paging_options(), fn %PagingOptions{
-                                                                        page_size: page_size
-                                                                      } = paging_options ->
-        maybe_parsed_limit = Helper.parse_integer(params["limit"])
-        %PagingOptions{paging_options | page_size: min(page_size, maybe_parsed_limit && abs(maybe_parsed_limit))}
+      |> Keyword.update(:paging_options, default_paging_options(), fn paging_options ->
+        %PagingOptions{paging_options | page_size: page_size + 1}
       end)
       |> Keyword.merge(token_transfers_types_options(params))
       |> Keyword.merge(tokens_sorting(params))
       |> Keyword.merge(@api_true)
 
-    {tokens, next_page} = filter |> Token.list_top(options) |> split_list_by_page()
+    {tokens, next_page} = filter |> Token.list_top(options) |> split_list_by_page(page_size)
 
     next_page_params = next_page |> next_page_params(tokens, delete_parameters_from_next_page_params(params))
 
