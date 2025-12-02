@@ -47,7 +47,7 @@ defmodule BlockScoutWeb.API.V2.TokenTransferController do
       options
       |> TokenTransfer.fetch()
       |> Chain.flat_1155_batch_token_transfers()
-      |> Chain.paginate_1155_batch_token_transfers(paging_options)
+      |> Chain.paginate_1155_batch_token_transfers(options)
       |> split_list_by_page(page_size)
 
     {token_transfers, next_page} = result
