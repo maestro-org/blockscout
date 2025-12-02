@@ -228,14 +228,20 @@ defmodule BlockScoutWeb.API.V2.AddressController do
     {eth_addr, final_params} = map_btc_to_eth_address_if_needed(conn, address_hash_string, params)
 
     with {:ok, address_hash, _address} <- validate_address(eth_addr, final_params) do
+      parsed_limit = Helper.parse_integer(params["limit"])
+      page_size = if parsed_limit && parsed_limit > 0, do: min(50, parsed_limit), else: 50
+
       options =
         @transaction_necessity_by_association
         |> Keyword.merge(paging_options(params))
+        |> Keyword.update(:paging_options, default_paging_options(), fn paging_opts ->
+          %PagingOptions{paging_opts | page_size: page_size + 1}
+        end)
         |> Keyword.merge(current_filter(params))
         |> Keyword.merge(address_transactions_sorting(params))
 
       results_plus_one = Transaction.address_to_transactions_without_rewards(address_hash, options, false)
-      {transactions, next_page} = split_list_by_page(results_plus_one)
+      {transactions, next_page} = split_list_by_page(results_plus_one, page_size)
 
       next_page_params =
         next_page
