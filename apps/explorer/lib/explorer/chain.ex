@@ -3411,24 +3411,14 @@ defmodule Explorer.Chain do
   @spec join_association(atom() | Ecto.Query.t(), [{atom(), atom()}], :optional | :required) :: Ecto.Query.t()
   def join_association(query, [{association, nested_preload}], necessity)
       when is_atom(association) and is_atom(nested_preload) do
+    # For MIDL intents association, use simple preload instead of LEFT JOIN
+    # to avoid slow query plans with zero btc_tx_hash values
     if association == :intents and Application.get_env(:explorer, :chain_type) == :midl do
       case necessity do
         :optional ->
-          from(q in query,
-            left_join: i in assoc(q, :intents),
-            on:
-              not is_nil(q.btc_tx_hash) and
-                fragment(
-                  "? <> decode('0000000000000000000000000000000000000000000000000000000000000000', 'hex')",
-                  i.btc_tx_hash
-                ) and
-                q.btc_tx_hash == i.btc_tx_hash,
-            left_join: a2 in assoc(i, :created_contract_address),
-            left_join: a4 in assoc(i, :to_address),
-            preload: [
-              intents: {i, [created_contract_address: a2, to_address: a4]}
-            ]
-          )
+          # Build preload list dynamically to include nested_preload
+          preload_list = [:created_contract_address, :to_address, nested_preload]
+          preload(query, [intents: ^preload_list])
       end
     else
       case necessity do
@@ -3449,66 +3439,26 @@ defmodule Explorer.Chain do
 
   @spec join_association(atom() | Ecto.Query.t(), atom(), :optional | :required) :: Ecto.Query.t()
   def join_association(query, association, necessity) do
+    # For MIDL associations, use simple preload instead of LEFT JOIN to avoid
+    # slow query plans when btc_tx_hash is NULL or zero-padded (affects 1.7M+ transactions).
+    # Ecto's preload runs a separate efficient IN query instead of a problematic LEFT JOIN.
     if (association == :intents or association == :completion_transaction or association == :initiation_transaction or
           association == :committed_send_event) and Application.get_env(:explorer, :chain_type) == :midl do
       case necessity do
         :optional ->
           cond do
             association == :intents ->
-              from(q in query,
-                left_join: i in assoc(q, :intents),
-                on:
-                  not is_nil(q.btc_tx_hash) and
-                    fragment(
-                      "? <> decode('0000000000000000000000000000000000000000000000000000000000000000', 'hex')",
-                      i.btc_tx_hash
-                    ) and
-                    q.btc_tx_hash == i.btc_tx_hash,
-                left_join: a2 in assoc(i, :created_contract_address),
-                left_join: a4 in assoc(i, :to_address),
-                preload: [
-                  intents: {i, [created_contract_address: a2, to_address: a4]}
-                ]
-              )
+              # Use preload with nested associations - runs as separate efficient query
+              preload(query, [intents: [:created_contract_address, :to_address]])
 
             association == :completion_transaction ->
-              from(q in query,
-                left_join: ct in assoc(q, :completion_transaction),
-                on:
-                  not is_nil(q.btc_tx_hash) and
-                    fragment(
-                      "? <> decode('0000000000000000000000000000000000000000000000000000000000000000', 'hex')",
-                      ct.btc_dapp_tx
-                    ) and
-                    q.btc_tx_hash == ct.btc_dapp_tx,
-                preload: [:completion_transaction]
-              )
+              preload(query, :completion_transaction)
 
             association == :initiation_transaction ->
-              from(q in query,
-                left_join: ct in assoc(q, :initiation_transaction),
-                on:
-                  not is_nil(q.btc_tx_hash) and
-                    fragment(
-                      "? <> decode('0000000000000000000000000000000000000000000000000000000000000000', 'hex')",
-                      ct.btc_dapp_tx
-                    ) and
-                    q.btc_tx_hash == ct.btc_dapp_tx,
-                preload: [:initiation_transaction]
-              )
+              preload(query, :initiation_transaction)
 
             association == :committed_send_event ->
-              from(q in query,
-                left_join: ct in assoc(q, :committed_send_event),
-                on:
-                  not is_nil(q.btc_tx_hash) and
-                    fragment(
-                      "? <> decode('0000000000000000000000000000000000000000000000000000000000000000', 'hex')",
-                      ct.btc_dapp_tx
-                    ) and
-                    q.btc_tx_hash == ct.btc_dapp_tx,
-                preload: [:committed_send_event]
-              )
+              preload(query, :committed_send_event)
           end
       end
     else
