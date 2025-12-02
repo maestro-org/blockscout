@@ -120,10 +120,20 @@ defmodule BlockScoutWeb.API.V2.TokenController do
     with {:format, {:ok, address_hash}} <- {:format, Chain.string_to_address_hash(address_hash_string)},
          {:ok, false} <- AccessHelper.restricted_access?(address_hash_string, params),
          {:not_found, {:ok, token}} <- {:not_found, Chain.token_from_address_hash(address_hash, @api_true)} do
-      results_plus_one =
-        Chain.fetch_token_holders_from_token_hash(address_hash, Keyword.merge(paging_options(params), @api_true))
+      parsed_limit = Helper.parse_integer(params["limit"])
+      page_size = if parsed_limit && parsed_limit > 0, do: min(50, parsed_limit), else: 50
 
-      {token_balances, next_page} = split_list_by_page(results_plus_one)
+      paging_opts =
+        params
+        |> paging_options()
+        |> Keyword.update(:paging_options, default_paging_options(), fn paging_options ->
+          %PagingOptions{paging_options | page_size: page_size + 1}
+        end)
+
+      results_plus_one =
+        Chain.fetch_token_holders_from_token_hash(address_hash, Keyword.merge(paging_opts, @api_true))
+
+      {token_balances, next_page} = split_list_by_page(results_plus_one, page_size)
 
       next_page_params = next_page |> next_page_params(token_balances, delete_parameters_from_next_page_params(params))
 
