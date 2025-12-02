@@ -11,8 +11,11 @@ defmodule BlockScoutWeb.API.V2.TransactionController do
       put_key_value_to_paging_options: 3,
       token_transfers_next_page_params: 3,
       paging_options: 1,
-      split_list_by_page: 1
+      split_list_by_page: 1,
+      split_list_by_page: 2
     ]
+
+  import Explorer.PagingOptions, only: [default_paging_options: 0]
 
   import BlockScoutWeb.PagingHelper,
     only: [
@@ -39,7 +42,7 @@ defmodule BlockScoutWeb.API.V2.TransactionController do
   alias BlockScoutWeb.AccessHelper
   alias BlockScoutWeb.MicroserviceInterfaces.TransactionInterpretation, as: TransactionInterpretationService
   alias BlockScoutWeb.Models.TransactionStateHelper
-  alias Explorer.{Chain, PagingOptions, Repo}
+  alias Explorer.{Chain, Helper, PagingOptions, Repo}
   alias Explorer.Chain.Arbitrum.Reader, as: ArbitrumReader
   alias Explorer.Chain.Beacon.Reader, as: BeaconReader
   alias Explorer.Chain.{Hash, InternalTransaction, Transaction}
@@ -203,18 +206,24 @@ defmodule BlockScoutWeb.API.V2.TransactionController do
   def transactions(conn, params) do
     filter_options = filter_options(params, :validated)
 
+    parsed_limit = Helper.parse_integer(params["limit"])
+    page_size = if parsed_limit && parsed_limit > 0, do: min(50, parsed_limit), else: 50
+
     full_options =
       [
         necessity_by_association: @transaction_necessity_by_association
       ]
       |> Keyword.merge(paging_options(params, filter_options))
+      |> Keyword.update(:paging_options, default_paging_options(), fn paging_opts ->
+        %PagingOptions{paging_opts | page_size: page_size + 1}
+      end)
       |> Keyword.merge(method_filter_options(params))
       |> Keyword.merge(type_filter_options(params))
       |> Keyword.merge(@api_true)
 
     transactions_plus_one = Chain.recent_transactions(full_options, filter_options)
 
-    {transactions, next_page} = split_list_by_page(transactions_plus_one)
+    {transactions, next_page} = split_list_by_page(transactions_plus_one, page_size)
 
     next_page_params = next_page |> next_page_params(transactions, delete_parameters_from_next_page_params(params))
 
