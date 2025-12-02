@@ -197,6 +197,7 @@ defmodule BlockScoutWeb.GraphQL.Schema.Types do
     Transaction
   }
 
+  alias Explorer.Chain.Address.Counters
   alias BlockScoutWeb.GraphQL.Schema.SmartContracts, as: SmartContractsSchema
   alias BlockScoutWeb.GraphQL.Schema.Transaction, as: TransactionSchema
 
@@ -221,13 +222,13 @@ defmodule BlockScoutWeb.GraphQL.Schema.Types do
 
     field :transactions_count, :integer do
       resolve(fn address, _, _ ->
-        {:ok, address.transactions_count}
+        {:ok, Counters.transaction_count(address)}
       end)
     end
 
     field :token_transfers_count, :integer do
       resolve(fn address, _, _ ->
-        {:ok, address.token_transfers_count}
+        {:ok, Counters.token_transfers_count(address)}
       end)
     end
 

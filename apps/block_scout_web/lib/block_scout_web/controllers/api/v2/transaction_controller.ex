@@ -64,12 +64,10 @@ defmodule BlockScoutWeb.API.V2.TransactionController do
       }
 
     :midl ->
-      @chain_type_transaction_necessity_by_association %{
-        :intents => :optional,
-        :completion_transaction => :optional,
-        :initiation_transaction => :optional,
-        :committed_send_event => :optional
-      }
+      # Skip MIDL associations for list endpoints - they cause slow queries due to
+      # 1.7M+ transactions with NULL/zero btc_tx_hash. Single transaction views
+      # load these separately. The view handles NotLoaded by returning empty arrays.
+      @chain_type_transaction_necessity_by_association %{}
 
     _ ->
       @chain_type_transaction_necessity_by_association %{}

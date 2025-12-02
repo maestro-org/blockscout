@@ -6,6 +6,7 @@ defmodule BlockScoutWeb.API.V2.InternalTransactionController do
   import BlockScoutWeb.Chain,
     only: [
       split_list_by_page: 1,
+      split_list_by_page: 2,
       paging_options: 1,
       next_page_params: 3
     ]
@@ -28,20 +29,20 @@ defmodule BlockScoutWeb.API.V2.InternalTransactionController do
   def internal_transactions(conn, params) do
     paging_options = paging_options(params)
 
+    parsed_limit = Helper.parse_integer(params["limit"])
+    page_size = if parsed_limit && parsed_limit > 0, do: min(50, parsed_limit), else: 50
+
     options =
       paging_options
-      |> Keyword.update(:paging_options, default_paging_options(), fn %PagingOptions{
-                                                                        page_size: page_size
-                                                                      } = paging_options ->
-        maybe_parsed_limit = Helper.parse_integer(params["limit"])
-        %PagingOptions{paging_options | page_size: min(page_size, maybe_parsed_limit && abs(maybe_parsed_limit))}
+      |> Keyword.update(:paging_options, default_paging_options(), fn paging_options ->
+        %PagingOptions{paging_options | page_size: page_size + 1}
       end)
       |> Keyword.merge(@api_true)
 
     result =
       options
       |> InternalTransaction.fetch()
-      |> split_list_by_page()
+      |> split_list_by_page(page_size)
 
     {internal_transactions, next_page} = result
 

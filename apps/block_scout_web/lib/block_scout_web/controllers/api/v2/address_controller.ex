@@ -9,6 +9,7 @@ defmodule BlockScoutWeb.API.V2.AddressController do
       token_transfers_next_page_params: 3,
       paging_options: 1,
       split_list_by_page: 1,
+      split_list_by_page: 2,
       current_filter: 1,
       paging_params_with_fiat_value: 1
     ]
@@ -23,10 +24,11 @@ defmodule BlockScoutWeb.API.V2.AddressController do
 
   import Explorer.MicroserviceInterfaces.BENS, only: [maybe_preload_ens: 1, maybe_preload_ens_to_address: 1]
   import Explorer.MicroserviceInterfaces.Metadata, only: [maybe_preload_metadata: 1]
+  import Explorer.PagingOptions, only: [default_paging_options: 0]
 
   alias BlockScoutWeb.AccessHelper
   alias BlockScoutWeb.API.V2.{BlockView, TransactionView, WithdrawalView}
-  alias Explorer.{Chain, Market}
+  alias Explorer.{Chain, Helper, Market, PagingOptions}
   alias Explorer.Chain.{Address, Hash, Transaction}
   alias Explorer.Chain.Address.Counters
   alias Explorer.Chain.Token.Instance
@@ -307,7 +309,15 @@ defmodule BlockScoutWeb.API.V2.AddressController do
     {eth_addr, final_params} = map_btc_to_eth_address_if_needed(conn, address_hash_string, params)
 
     with {:ok, address_hash, _address} <- validate_address(eth_addr, final_params) do
-      paging_options = paging_options(params)
+      parsed_limit = Helper.parse_integer(params["limit"])
+      page_size = if parsed_limit && parsed_limit > 0, do: min(50, parsed_limit), else: 50
+
+      paging_options =
+        params
+        |> paging_options()
+        |> Keyword.update(:paging_options, default_paging_options(), fn paging_opts ->
+          %PagingOptions{paging_opts | page_size: page_size + 1}
+        end)
 
       options =
         @token_transfer_necessity_by_association
@@ -321,7 +331,7 @@ defmodule BlockScoutWeb.API.V2.AddressController do
         |> Chain.flat_1155_batch_token_transfers()
         |> Chain.paginate_1155_batch_token_transfers(paging_options)
 
-      {token_transfers, next_page} = split_list_by_page(results)
+      {token_transfers, next_page} = split_list_by_page(results, page_size)
 
       next_page_params =
         next_page

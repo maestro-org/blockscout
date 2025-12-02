@@ -561,6 +561,14 @@ defmodule BlockScoutWeb.Chain do
 
   def split_list_by_page(list_plus_one), do: Enum.split(list_plus_one, @page_size)
 
+  @doc """
+  Splits a list fetched with +1 item into current page and next page marker,
+  using a custom page size. Use this when dynamic limit is supported.
+  """
+  def split_list_by_page(list_plus_one, page_size) when is_integer(page_size) do
+    Enum.split(list_plus_one, page_size)
+  end
+
   defp decimal_parse(input_string) do
     case Decimal.parse(input_string) do
       {decimal, ""} -> decimal
