@@ -9,6 +9,7 @@ defmodule BlockScoutWeb.API.V2.BlockController do
       paging_options: 1,
       put_key_value_to_paging_options: 3,
       split_list_by_page: 1,
+      split_list_by_page: 2,
       parse_block_hash_or_number_param: 1
     ]
 
@@ -17,6 +18,7 @@ defmodule BlockScoutWeb.API.V2.BlockController do
 
   import Explorer.MicroserviceInterfaces.BENS, only: [maybe_preload_ens: 1]
   import Explorer.MicroserviceInterfaces.Metadata, only: [maybe_preload_metadata: 1]
+  import Explorer.PagingOptions, only: [default_paging_options: 0]
 
   import Explorer.Chain.Celo.Helper,
     only: [
@@ -30,7 +32,7 @@ defmodule BlockScoutWeb.API.V2.BlockController do
     WithdrawalView
   }
 
-  alias Explorer.Chain
+  alias Explorer.{Chain, Helper, PagingOptions}
   alias Explorer.Chain.Arbitrum.Reader, as: ArbitrumReader
   alias Explorer.Chain.Celo.ElectionReward, as: CeloElectionReward
   alias Explorer.Chain.Celo.EpochReward, as: CeloEpochReward
@@ -165,13 +167,23 @@ defmodule BlockScoutWeb.API.V2.BlockController do
   def blocks(conn, params) do
     full_options = select_block_type(params)
 
+    parsed_limit = Helper.parse_integer(params["limit"])
+    page_size = if parsed_limit && parsed_limit > 0, do: min(50, parsed_limit), else: 50
+
+    paging_opts =
+      params
+      |> paging_options()
+      |> Keyword.update(:paging_options, default_paging_options(), fn paging_options ->
+        %PagingOptions{paging_options | page_size: page_size + 1}
+      end)
+
     blocks_plus_one =
       full_options
-      |> Keyword.merge(paging_options(params))
+      |> Keyword.merge(paging_opts)
       |> Keyword.merge(@api_true)
       |> Chain.list_blocks()
 
-    {blocks, next_page} = split_list_by_page(blocks_plus_one)
+    {blocks, next_page} = split_list_by_page(blocks_plus_one, page_size)
 
     next_page_params = next_page |> next_page_params(blocks, delete_parameters_from_next_page_params(params))
 
