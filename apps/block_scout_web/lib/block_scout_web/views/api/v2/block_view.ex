@@ -33,6 +33,7 @@ defmodule BlockScoutWeb.API.V2.BlockView do
     priority_fee = block.base_fee_per_gas && BlockPriorityFeeCounter.fetch(block.hash)
 
     transaction_fees = Block.transaction_fees(block.transactions)
+    total_value = Block.total_value(block.transactions)
 
     %{
       "height" => block.number,
@@ -59,6 +60,7 @@ defmodule BlockScoutWeb.API.V2.BlockView do
       "burnt_fees_percentage" => burnt_fees_percentage(burnt_fees, transaction_fees),
       "type" => block |> BlockView.block_type() |> String.downcase(),
       "transaction_fees" => transaction_fees,
+      "total_value" => total_value,
       "withdrawals_count" => count_withdrawals(block)
     }
     |> chain_type_fields(block, single_block?)
