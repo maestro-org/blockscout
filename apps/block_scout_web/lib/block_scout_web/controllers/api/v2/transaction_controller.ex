@@ -169,8 +169,11 @@ defmodule BlockScoutWeb.API.V2.TransactionController do
           |> Map.put([wrapped_to_address: :names], :optional)
 
         :midl ->
+          # NOTE: :intents is NOT loaded here to avoid performance issues.
+          # When btc_tx_hash is zero-padded (0x000...000), loading intents would
+          # return 1.5M+ rows causing 60s+ timeouts. Intents are loaded conditionally
+          # via maybe_load_midl_intents/1 after the transaction is fetched.
           necessity_by_association_with_actions
-          |> Map.put(:intents, :optional)
           |> Map.put(:completion_transaction, :optional)
           |> Map.put(:initiation_transaction, :optional)
           |> Map.put(:committed_send_event, :optional)
@@ -184,9 +187,10 @@ defmodule BlockScoutWeb.API.V2.TransactionController do
       |> Keyword.merge(@api_true)
 
     with {:ok, transaction, _transaction_hash} <- validate_transaction(transaction_hash_string, params, options),
+         transaction_with_intents <- maybe_load_midl_intents(transaction),
          preloaded <-
            Chain.preload_token_transfers(
-             transaction,
+             transaction_with_intents,
              @token_transfers_in_transaction_necessity_by_association,
              @api_true,
              false
@@ -705,4 +709,31 @@ defmodule BlockScoutWeb.API.V2.TransactionController do
       {:ok, transaction, transaction_hash}
     end
   end
+
+  # Conditionally loads the :intents association for MIDL chain type.
+  # This is done separately from the main query because when btc_tx_hash is
+  # zero-padded (0x000...000) or NULL, loading intents would return 1.5M+ rows
+  # causing 60s+ timeouts. Only transactions with valid btc_tx_hash values
+  # will have their intents loaded.
+  defp maybe_load_midl_intents(transaction) do
+    case Application.get_env(:explorer, :chain_type) do
+      :midl ->
+        if valid_btc_tx_hash?(transaction.btc_tx_hash) do
+          Repo.replica().preload(transaction, intents: [:created_contract_address, :to_address])
+        else
+          %{transaction | intents: []}
+        end
+
+      _ ->
+        transaction
+    end
+  end
+
+  # Zero-padded hash (32 bytes of zeros) - must match Explorer.Chain.Hash struct
+  @zero_bytes <<0::256>>
+
+  defp valid_btc_tx_hash?(nil), do: false
+  defp valid_btc_tx_hash?(%{bytes: @zero_bytes}), do: false
+  defp valid_btc_tx_hash?(%{bytes: _}), do: true
+  defp valid_btc_tx_hash?(_), do: false
 end
