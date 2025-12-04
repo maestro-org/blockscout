@@ -575,23 +575,24 @@ defmodule Explorer.Chain do
     necessity_by_association = Keyword.get(options, :necessity_by_association, %{})
     type_filter = Keyword.get(options, :type)
 
-    options
-    |> Keyword.get(:paging_options, @default_paging_options)
-    |> fetch_transactions_in_ascending_order_by_index()
-    |> join(:inner, [transaction], block in assoc(transaction, :block))
-    |> where([_, block], block.hash == ^block_hash)
-    |> apply_filter_by_type_to_transactions(type_filter)
-    |> join_associations(necessity_by_association)
-    |> Transaction.put_has_token_transfers_to_transaction(old_ui?)
-    |> (&if(old_ui?, do: preload(&1, [{:token_transfers, [:token, :from_address, :to_address]}]), else: &1)).()
-    |> select_repo(options).all()
-    |> (&if(old_ui?,
-          do: &1,
-          else:
-            Enum.map(&1, fn transaction ->
-              preload_token_transfers(transaction, @token_transfer_necessity_by_association, options)
-            end)
-        )).()
+    transactions =
+      options
+      |> Keyword.get(:paging_options, @default_paging_options)
+      |> fetch_transactions_in_ascending_order_by_index()
+      |> join(:inner, [transaction], block in assoc(transaction, :block))
+      |> where([_, block], block.hash == ^block_hash)
+      |> apply_filter_by_type_to_transactions(type_filter)
+      |> join_associations(necessity_by_association)
+      |> Transaction.put_has_token_transfers_to_transaction(old_ui?)
+      |> (&if(old_ui?, do: preload(&1, [{:token_transfers, [:token, :from_address, :to_address]}]), else: &1)).()
+      |> select_repo(options).all()
+
+    # Use batch preloading instead of N+1 queries for new UI
+    if old_ui? do
+      transactions
+    else
+      batch_preload_token_transfers(transactions, @token_transfer_necessity_by_association, options)
+    end
   end
 
   @spec execution_node_to_transactions(Hash.Address.t(), [paging_options | necessity_by_association_option | api?()]) ::
@@ -599,17 +600,17 @@ defmodule Explorer.Chain do
   def execution_node_to_transactions(execution_node_hash, options \\ []) when is_list(options) do
     necessity_by_association = Keyword.get(options, :necessity_by_association, %{})
 
-    options
-    |> Keyword.get(:paging_options, @default_paging_options)
-    |> fetch_transactions_in_descending_order_by_block_and_index()
-    |> where(execution_node_hash: ^execution_node_hash)
-    |> join_associations(necessity_by_association)
-    |> Transaction.put_has_token_transfers_to_transaction(false)
-    |> (& &1).()
-    |> select_repo(options).all()
-    |> (&Enum.map(&1, fn transaction ->
-          preload_token_transfers(transaction, @token_transfer_necessity_by_association, options)
-        end)).()
+    transactions =
+      options
+      |> Keyword.get(:paging_options, @default_paging_options)
+      |> fetch_transactions_in_descending_order_by_block_and_index()
+      |> where(execution_node_hash: ^execution_node_hash)
+      |> join_associations(necessity_by_association)
+      |> Transaction.put_has_token_transfers_to_transaction(false)
+      |> select_repo(options).all()
+
+    # Use batch preloading instead of N+1 queries
+    batch_preload_token_transfers(transactions, @token_transfer_necessity_by_association, options)
   end
 
   @spec block_to_withdrawals(
@@ -1367,6 +1368,62 @@ defmodule Explorer.Chain do
   end
 
   def get_token_transfers_per_transaction_preview_count, do: @token_transfers_per_transaction_preview
+
+  @doc """
+  Batch preloads token transfers for multiple transactions in a single query.
+  This eliminates the N+1 query problem when loading token transfers for transaction lists.
+
+  For each transaction, loads up to `@token_transfers_per_transaction_preview` token transfers
+  with their associated addresses and tokens.
+
+  Token transfers are filtered by block_hash in Elixir to ensure data correctness during reorgs,
+  matching the original behavior where transfers are filtered by both transaction_hash AND block_hash.
+  """
+  @spec batch_preload_token_transfers([Transaction.t()], map(), Keyword.t()) :: [Transaction.t()]
+  def batch_preload_token_transfers([], _necessity_by_association, _options), do: []
+
+  def batch_preload_token_transfers(transactions, necessity_by_association, options) do
+    # Build a map of transaction_hash -> block_hash for filtering
+    tx_block_hash_map =
+      transactions
+      |> Enum.map(fn tx -> {tx.hash, tx.block_hash} end)
+      |> Map.new()
+
+    transaction_hashes = Map.keys(tx_block_hash_map)
+
+    # Query all token transfers for all transactions in one query
+    # We fetch more than needed and limit per-transaction in Elixir
+    token_transfers =
+      from(tt in TokenTransfer,
+        where: tt.transaction_hash in ^transaction_hashes,
+        order_by: [asc: tt.transaction_hash, asc: tt.log_index]
+      )
+      |> join_associations(necessity_by_association)
+      |> select_repo(options).all()
+      |> flat_1155_batch_token_transfers()
+      # Filter by block_hash to ensure data correctness (matches original behavior)
+      # If tx.block_hash is nil (pending tx), accept any token transfer for that tx
+      # Otherwise, only accept transfers from the same block
+      |> Enum.filter(fn tt ->
+        tx_block_hash = Map.get(tx_block_hash_map, tt.transaction_hash)
+        is_nil(tx_block_hash) or tt.block_hash == tx_block_hash
+      end)
+
+    # Group token transfers by transaction hash
+    transfers_by_tx_hash =
+      token_transfers
+      |> Enum.group_by(& &1.transaction_hash)
+
+    # Attach token transfers to each transaction, limiting to preview count
+    Enum.map(transactions, fn tx ->
+      tx_transfers =
+        transfers_by_tx_hash
+        |> Map.get(tx.hash, [])
+        |> Enum.take(@token_transfers_per_transaction_preview)
+
+      %Transaction{tx | token_transfers: tx_transfers}
+    end)
+  end
 
   @doc """
   Converts list of `t:Explorer.Chain.Transaction.t/0` `hashes` to the list of `t:Explorer.Chain.Transaction.t/0`s for
@@ -2685,22 +2742,23 @@ defmodule Explorer.Chain do
         []
 
       _ ->
-        paging_options
-        |> Transaction.fetch_transactions()
-        |> where([transaction], not is_nil(transaction.block_number) and not is_nil(transaction.index))
-        |> apply_filter_by_method_id_to_transactions(method_id_filter)
-        |> apply_filter_by_type_to_transactions(type_filter)
-        |> join_associations(necessity_by_association)
-        |> Transaction.put_has_token_transfers_to_transaction(old_ui?)
-        |> (&if(old_ui?, do: preload(&1, [{:token_transfers, [:token, :from_address, :to_address]}]), else: &1)).()
-        |> select_repo(options).all()
-        |> (&if(old_ui?,
-              do: &1,
-              else:
-                Enum.map(&1, fn transaction ->
-                  preload_token_transfers(transaction, @token_transfer_necessity_by_association, options)
-                end)
-            )).()
+        transactions =
+          paging_options
+          |> Transaction.fetch_transactions()
+          |> where([transaction], not is_nil(transaction.block_number) and not is_nil(transaction.index))
+          |> apply_filter_by_method_id_to_transactions(method_id_filter)
+          |> apply_filter_by_type_to_transactions(type_filter)
+          |> join_associations(necessity_by_association)
+          |> Transaction.put_has_token_transfers_to_transaction(old_ui?)
+          |> (&if(old_ui?, do: preload(&1, [{:token_transfers, [:token, :from_address, :to_address]}]), else: &1)).()
+          |> select_repo(options).all()
+
+        # Use batch preloading instead of N+1 queries for new UI
+        if old_ui? do
+          transactions
+        else
+          batch_preload_token_transfers(transactions, @token_transfer_necessity_by_association, options)
+        end
     end
   end
 
