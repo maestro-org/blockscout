@@ -326,6 +326,212 @@ defmodule Explorer.Chain.TokenTransferTest do
     end
   end
 
+  describe "fetch/1 with activity filtering" do
+    @burn_address_hash_string "0x0000000000000000000000000000000000000000"
+
+    setup do
+      {:ok, burn_address_hash} = Explorer.Chain.string_to_address_hash(@burn_address_hash_string)
+      burn_address = insert(:address, hash: burn_address_hash)
+      regular_address_1 = insert(:address)
+      regular_address_2 = insert(:address)
+      token_contract_address = insert(:contract_address)
+      token = insert(:token, contract_address: token_contract_address)
+
+      {:ok,
+       burn_address: burn_address,
+       regular_address_1: regular_address_1,
+       regular_address_2: regular_address_2,
+       token: token,
+       token_contract_address: token_contract_address}
+    end
+
+    defp create_token_transfer(from_address, to_address, token, token_contract_address, block_number) do
+      transaction =
+        :transaction
+        |> insert()
+        |> with_block(number: block_number)
+
+      insert(
+        :token_transfer,
+        from_address: from_address,
+        to_address: to_address,
+        transaction: transaction,
+        token_contract_address: token_contract_address,
+        token: token,
+        block_number: block_number
+      )
+    end
+
+    test "filters MINTING transfers (from burn address to regular address)", context do
+      %{
+        burn_address: burn_address,
+        regular_address_1: regular_address_1,
+        regular_address_2: regular_address_2,
+        token: token,
+        token_contract_address: token_contract_address
+      } = context
+
+      # Minting: from burn to regular
+      minting_transfer = create_token_transfer(burn_address, regular_address_1, token, token_contract_address, 1000)
+
+      # Regular transfer: should be excluded
+      _regular_transfer = create_token_transfer(regular_address_1, regular_address_2, token, token_contract_address, 999)
+
+      results = TokenTransfer.fetch(activity: ["MINTING"], paging_options: %PagingOptions{page_size: 10})
+      result_keys = Enum.map(results, &{&1.transaction_hash, &1.log_index})
+
+      assert {minting_transfer.transaction_hash, minting_transfer.log_index} in result_keys
+      assert length(results) == 1
+    end
+
+    test "filters BURNING transfers (from regular address to burn address)", context do
+      %{
+        burn_address: burn_address,
+        regular_address_1: regular_address_1,
+        regular_address_2: regular_address_2,
+        token: token,
+        token_contract_address: token_contract_address
+      } = context
+
+      # Burning: from regular to burn
+      burning_transfer = create_token_transfer(regular_address_1, burn_address, token, token_contract_address, 1000)
+
+      # Regular transfer: should be excluded
+      _regular_transfer = create_token_transfer(regular_address_1, regular_address_2, token, token_contract_address, 999)
+
+      results = TokenTransfer.fetch(activity: ["BURNING"], paging_options: %PagingOptions{page_size: 10})
+      result_keys = Enum.map(results, &{&1.transaction_hash, &1.log_index})
+
+      assert {burning_transfer.transaction_hash, burning_transfer.log_index} in result_keys
+      assert length(results) == 1
+    end
+
+    test "filters SPAWNING transfers (from burn address to burn address)", context do
+      %{
+        burn_address: burn_address,
+        regular_address_1: regular_address_1,
+        regular_address_2: regular_address_2,
+        token: token,
+        token_contract_address: token_contract_address
+      } = context
+
+      # Spawning: from burn to burn
+      spawning_transfer = create_token_transfer(burn_address, burn_address, token, token_contract_address, 1000)
+
+      # Regular transfer: should be excluded
+      _regular_transfer = create_token_transfer(regular_address_1, regular_address_2, token, token_contract_address, 999)
+
+      results = TokenTransfer.fetch(activity: ["SPAWNING"], paging_options: %PagingOptions{page_size: 10})
+      result_keys = Enum.map(results, &{&1.transaction_hash, &1.log_index})
+
+      assert {spawning_transfer.transaction_hash, spawning_transfer.log_index} in result_keys
+      assert length(results) == 1
+    end
+
+    test "filters TRANSFER (regular transfers between non-burn addresses)", context do
+      %{
+        burn_address: burn_address,
+        regular_address_1: regular_address_1,
+        regular_address_2: regular_address_2,
+        token: token,
+        token_contract_address: token_contract_address
+      } = context
+
+      # Regular transfer: between non-burn addresses
+      regular_transfer = create_token_transfer(regular_address_1, regular_address_2, token, token_contract_address, 1000)
+
+      # Minting: should be excluded
+      _minting_transfer = create_token_transfer(burn_address, regular_address_1, token, token_contract_address, 999)
+
+      results = TokenTransfer.fetch(activity: ["TRANSFER"], paging_options: %PagingOptions{page_size: 10})
+      result_keys = Enum.map(results, &{&1.transaction_hash, &1.log_index})
+
+      assert {regular_transfer.transaction_hash, regular_transfer.log_index} in result_keys
+      assert length(results) == 1
+    end
+
+    test "filters multiple activity types (MINTING and BURNING)", context do
+      %{
+        burn_address: burn_address,
+        regular_address_1: regular_address_1,
+        regular_address_2: regular_address_2,
+        token: token,
+        token_contract_address: token_contract_address
+      } = context
+
+      # Minting
+      minting_transfer = create_token_transfer(burn_address, regular_address_1, token, token_contract_address, 1000)
+
+      # Burning
+      burning_transfer = create_token_transfer(regular_address_1, burn_address, token, token_contract_address, 999)
+
+      # Regular transfer: should be excluded
+      _regular_transfer = create_token_transfer(regular_address_1, regular_address_2, token, token_contract_address, 998)
+
+      results = TokenTransfer.fetch(activity: ["MINTING", "BURNING"], paging_options: %PagingOptions{page_size: 10})
+      result_keys = Enum.map(results, &{&1.transaction_hash, &1.log_index})
+
+      assert {minting_transfer.transaction_hash, minting_transfer.log_index} in result_keys
+      assert {burning_transfer.transaction_hash, burning_transfer.log_index} in result_keys
+      assert length(results) == 2
+    end
+
+    test "empty activity list returns all transfers", context do
+      %{
+        burn_address: burn_address,
+        regular_address_1: regular_address_1,
+        regular_address_2: regular_address_2,
+        token: token,
+        token_contract_address: token_contract_address
+      } = context
+
+      _minting_transfer = create_token_transfer(burn_address, regular_address_1, token, token_contract_address, 1000)
+      _regular_transfer = create_token_transfer(regular_address_1, regular_address_2, token, token_contract_address, 999)
+
+      results = TokenTransfer.fetch(activity: [], paging_options: %PagingOptions{page_size: 10})
+
+      assert length(results) == 2
+    end
+
+    test "invalid activity types are ignored", context do
+      %{
+        burn_address: burn_address,
+        regular_address_1: regular_address_1,
+        regular_address_2: regular_address_2,
+        token: token,
+        token_contract_address: token_contract_address
+      } = context
+
+      minting_transfer = create_token_transfer(burn_address, regular_address_1, token, token_contract_address, 1000)
+      _regular_transfer = create_token_transfer(regular_address_1, regular_address_2, token, token_contract_address, 999)
+
+      # Mix valid and invalid activity types
+      results = TokenTransfer.fetch(activity: ["MINTING", "INVALID_TYPE"], paging_options: %PagingOptions{page_size: 10})
+      result_keys = Enum.map(results, &{&1.transaction_hash, &1.log_index})
+
+      assert {minting_transfer.transaction_hash, minting_transfer.log_index} in result_keys
+      assert length(results) == 1
+    end
+
+    test "all invalid activity types returns all transfers", context do
+      %{
+        burn_address: burn_address,
+        regular_address_1: regular_address_1,
+        regular_address_2: regular_address_2,
+        token: token,
+        token_contract_address: token_contract_address
+      } = context
+
+      _minting_transfer = create_token_transfer(burn_address, regular_address_1, token, token_contract_address, 1000)
+      _regular_transfer = create_token_transfer(regular_address_1, regular_address_2, token, token_contract_address, 999)
+
+      # All invalid types - should behave like empty filter
+      results = TokenTransfer.fetch(activity: ["INVALID", "ALSO_INVALID"], paging_options: %PagingOptions{page_size: 10})
+
+      assert length(results) == 2
+    end
+  end
+
   describe "uncataloged_token_transfer_block_numbers/0" do
     test "returns a list of block numbers" do
       block = insert(:block)

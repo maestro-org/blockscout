@@ -333,10 +333,8 @@ defmodule Explorer.Chain.TokenTransfer do
     end
   end
 
-  @doc """
-  Filters token transfers by activity type (minting, burning, transfer, spawning).
-  Activity is determined by comparing from/to addresses with the burn address (0x0...0).
-  """
+  # Filters token transfers by activity type (minting, burning, transfer, spawning).
+  # Activity is determined by comparing from/to addresses with the burn address (0x0...0).
   defp maybe_filter_by_activity(query, activities) when is_list(activities) do
     if Enum.empty?(activities) do
       query
