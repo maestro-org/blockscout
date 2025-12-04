@@ -18,6 +18,7 @@ defmodule BlockScoutWeb.API.V2.AddressController do
     only: [
       delete_parameters_from_next_page_params: 1,
       token_transfers_types_options: 1,
+      token_transfers_activity_options: 1,
       address_transactions_sorting: 1,
       nft_types_options: 1
     ]
@@ -330,6 +331,7 @@ defmodule BlockScoutWeb.API.V2.AddressController do
         |> Keyword.merge(paging_options)
         |> Keyword.merge(current_filter(params))
         |> Keyword.merge(token_transfers_types_options(params))
+        |> Keyword.merge(token_transfers_activity_options(params))
 
       results =
         address_hash
