@@ -365,7 +365,8 @@ defmodule Explorer.Chain.Block do
   def total_value(transactions) do
     Enum.reduce(transactions, Decimal.new(0), fn %{value: value}, acc ->
       if value do
-        value.value
+        value
+        |> Wei.to(:wei)
         |> Decimal.add(acc)
       else
         acc
