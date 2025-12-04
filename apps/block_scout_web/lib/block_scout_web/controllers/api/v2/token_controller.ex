@@ -25,6 +25,7 @@ defmodule BlockScoutWeb.API.V2.TokenController do
       chain_ids_filter_options: 1,
       delete_parameters_from_next_page_params: 1,
       token_transfers_types_options: 1,
+      token_transfers_activity_options: 1,
       tokens_sorting: 1
     ]
 
@@ -87,18 +88,20 @@ defmodule BlockScoutWeb.API.V2.TokenController do
       parsed_limit = Helper.parse_integer(params["limit"])
       page_size = if parsed_limit && parsed_limit > 0, do: min(50, parsed_limit), else: 50
 
-      paging_options =
+      options =
         params
         |> paging_options()
         |> Keyword.update(:paging_options, default_paging_options(), fn paging_options ->
           %PagingOptions{paging_options | page_size: page_size + 1}
         end)
+        |> Keyword.merge(token_transfers_types_options(params))
+        |> Keyword.merge(token_transfers_activity_options(params))
 
       results =
         address_hash
-        |> Chain.fetch_token_transfers_from_token_hash(Keyword.merge(@api_true, paging_options))
+        |> Chain.fetch_token_transfers_from_token_hash(Keyword.merge(@api_true, options))
         |> Chain.flat_1155_batch_token_transfers()
-        |> Chain.paginate_1155_batch_token_transfers(paging_options)
+        |> Chain.paginate_1155_batch_token_transfers(options)
 
       {token_transfers, next_page} = split_list_by_page(results, page_size)
 

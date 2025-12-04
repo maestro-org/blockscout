@@ -232,6 +232,8 @@ defmodule Explorer.Chain.TokenTransfer do
   @spec fetch_token_transfers_from_token_hash(Hash.t(), [paging_options | api?]) :: []
   def fetch_token_transfers_from_token_hash(token_address_hash, options) do
     paging_options = Keyword.get(options, :paging_options, @default_paging_options)
+    token_type = Keyword.get(options, :token_type)
+    activity = Keyword.get(options, :activity, [])
 
     case paging_options do
       %PagingOptions{key: {0, 0}} ->
@@ -250,6 +252,8 @@ defmodule Explorer.Chain.TokenTransfer do
         |> where([tt], tt.token_contract_address_hash == ^token_address_hash and not is_nil(tt.block_number))
         |> preload(^preloads)
         |> order_by([tt], desc: tt.block_number, desc: tt.log_index)
+        |> maybe_filter_by_token_type(token_type)
+        |> maybe_filter_by_activity(activity)
         |> page_token_transfer(paging_options)
         |> limit(^paging_options.page_size)
         |> Chain.select_repo(options).all()
@@ -573,9 +577,10 @@ defmodule Explorer.Chain.TokenTransfer do
           Hash.Address.t(),
           nil | :to | :from,
           [binary()],
+          [binary()],
           nil | Explorer.PagingOptions.t()
         ) :: Ecto.Query.t()
-  def token_transfers_by_address_hash(address_hash, direction, token_types, paging_options) do
+  def token_transfers_by_address_hash(address_hash, direction, token_types, activity, paging_options) do
     if direction == :to || direction == :from do
       only_consensus_transfers_query()
       |> filter_by_direction(direction, address_hash)
@@ -583,6 +588,7 @@ defmodule Explorer.Chain.TokenTransfer do
       |> join(:inner, [tt], token in assoc(tt, :token), as: :token)
       |> preload([token: token], [{:token, token}])
       |> filter_by_type(token_types)
+      |> maybe_filter_by_activity(activity)
       |> handle_paging_options(paging_options)
     else
       to_address_hash_query =
@@ -590,6 +596,7 @@ defmodule Explorer.Chain.TokenTransfer do
         |> join(:inner, [tt], token in assoc(tt, :token), as: :token)
         |> filter_by_direction(:to, address_hash)
         |> filter_by_type(token_types)
+        |> maybe_filter_by_activity(activity)
         |> order_by([tt], desc: tt.block_number, desc: tt.log_index)
         |> handle_paging_options(paging_options)
         |> Chain.wrapped_union_subquery()
@@ -599,6 +606,7 @@ defmodule Explorer.Chain.TokenTransfer do
         |> join(:inner, [tt], token in assoc(tt, :token), as: :token)
         |> filter_by_direction(:from, address_hash)
         |> filter_by_type(token_types)
+        |> maybe_filter_by_activity(activity)
         |> order_by([tt], desc: tt.block_number, desc: tt.log_index)
         |> handle_paging_options(paging_options)
         |> Chain.wrapped_union_subquery()

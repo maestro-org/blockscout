@@ -321,10 +321,11 @@ defmodule Explorer.Chain do
     paging_options = Keyword.get(options, :paging_options, @default_paging_options)
     direction = Keyword.get(options, :direction)
     filters = Keyword.get(options, :token_type)
+    activity = Keyword.get(options, :activity, [])
     necessity_by_association = Keyword.get(options, :necessity_by_association)
 
     address_hash
-    |> TokenTransfer.token_transfers_by_address_hash(direction, filters, paging_options)
+    |> TokenTransfer.token_transfers_by_address_hash(direction, filters, activity, paging_options)
     |> join_associations(necessity_by_association)
     |> select_repo(options).all()
   end
