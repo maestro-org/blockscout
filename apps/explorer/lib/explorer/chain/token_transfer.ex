@@ -140,7 +140,7 @@ defmodule Explorer.Chain.TokenTransfer do
   import Ecto.Changeset
 
   alias Explorer.{Chain, Helper}
-  alias Explorer.Chain.{DenormalizationHelper, Hash, Log, TokenTransfer}
+  alias Explorer.Chain.{DenormalizationHelper, Hash, Log, SmartContract, TokenTransfer}
   alias Explorer.Chain.SmartContract.Proxy.Models.Implementation
   alias Explorer.{PagingOptions, Repo}
 
@@ -292,6 +292,7 @@ defmodule Explorer.Chain.TokenTransfer do
   def fetch(options) do
     paging_options = Keyword.get(options, :paging_options, @default_paging_options)
     token_type = Keyword.get(options, :token_type)
+    activity = Keyword.get(options, :activity, [])
 
     case paging_options do
       %PagingOptions{key: {0, 0}} ->
@@ -310,6 +311,7 @@ defmodule Explorer.Chain.TokenTransfer do
         |> preload(^preloads)
         |> order_by([tt], desc: tt.block_number, desc: tt.log_index)
         |> maybe_filter_by_token_type(token_type)
+        |> maybe_filter_by_activity(activity)
         |> page_token_transfer(paging_options)
         |> limit(^paging_options.page_size)
         |> Chain.select_repo(options).all()
@@ -330,6 +332,51 @@ defmodule Explorer.Chain.TokenTransfer do
       end
     end
   end
+
+  @doc """
+  Filters token transfers by activity type (minting, burning, transfer, spawning).
+  Activity is determined by comparing from/to addresses with the burn address (0x0...0).
+  """
+  defp maybe_filter_by_activity(query, activities) when is_list(activities) do
+    if Enum.empty?(activities) do
+      query
+    else
+      {:ok, burn_address_hash} = Chain.string_to_address_hash(SmartContract.burn_address_hash_string())
+
+      conditions =
+        activities
+        |> Enum.map(&activity_to_condition(&1, burn_address_hash))
+        |> Enum.reject(&is_nil/1)
+
+      if Enum.empty?(conditions) do
+        query
+      else
+        combined_condition = Enum.reduce(conditions, fn condition, acc ->
+          dynamic([tt], ^acc or ^condition)
+        end)
+
+        where(query, ^combined_condition)
+      end
+    end
+  end
+
+  defp activity_to_condition("MINTING", burn_address_hash) do
+    dynamic([tt], tt.from_address_hash == ^burn_address_hash and tt.to_address_hash != ^burn_address_hash)
+  end
+
+  defp activity_to_condition("BURNING", burn_address_hash) do
+    dynamic([tt], tt.to_address_hash == ^burn_address_hash and tt.from_address_hash != ^burn_address_hash)
+  end
+
+  defp activity_to_condition("SPAWNING", burn_address_hash) do
+    dynamic([tt], tt.from_address_hash == ^burn_address_hash and tt.to_address_hash == ^burn_address_hash)
+  end
+
+  defp activity_to_condition("TRANSFER", burn_address_hash) do
+    dynamic([tt], tt.from_address_hash != ^burn_address_hash and tt.to_address_hash != ^burn_address_hash)
+  end
+
+  defp activity_to_condition(_, _burn_address_hash), do: nil
 
   @spec count_token_transfers_from_token_hash(Hash.t()) :: non_neg_integer()
   def count_token_transfers_from_token_hash(token_address_hash) do

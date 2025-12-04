@@ -359,6 +359,21 @@ defmodule Explorer.Chain.Block do
   end
 
   @doc """
+  Calculates total value transferred for the list of transactions (from a single block)
+  """
+  @spec total_value([Transaction.t()]) :: Decimal.t()
+  def total_value(transactions) do
+    Enum.reduce(transactions, Decimal.new(0), fn %{value: value}, acc ->
+      if value do
+        value.value
+        |> Decimal.add(acc)
+      else
+        acc
+      end
+    end)
+  end
+
+  @doc """
   Finds blob transaction gas price for the list of transactions (from a single block)
   """
   @spec transaction_blob_gas_price([Transaction.t()]) :: Decimal.t() | nil

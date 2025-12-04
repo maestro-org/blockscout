@@ -37,6 +37,7 @@ defmodule BlockScoutWeb.PagingHelper do
   end
 
   @allowed_token_transfer_type_labels ["ERC-20", "ERC-721", "ERC-1155", "ERC-404"]
+  @allowed_token_transfer_activity_labels ["MINTING", "BURNING", "TRANSFER", "SPAWNING"]
   @allowed_nft_type_labels ["ERC-721", "ERC-1155", "ERC-404"]
   @allowed_chain_id [1, 56, 99]
   @allowed_stability_validators_states ["active", "probation", "inactive"]
@@ -80,6 +81,19 @@ defmodule BlockScoutWeb.PagingHelper do
   end
 
   def token_transfers_types_options(_), do: [token_type: []]
+
+  @doc """
+    Parse 'activity' query parameter from request option map for token transfers.
+    Accepts: minting, burning, transfer, spawning (case-insensitive, comma-separated)
+  """
+  @spec token_transfers_activity_options(map()) :: [{:activity, list}]
+  def token_transfers_activity_options(%{"activity" => filters}) do
+    [
+      activity: filters_to_list(filters, @allowed_token_transfer_activity_labels)
+    ]
+  end
+
+  def token_transfers_activity_options(_), do: [activity: []]
 
   @doc """
     Parse 'type' query parameter from request option map
