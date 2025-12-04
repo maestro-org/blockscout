@@ -14,7 +14,8 @@ defmodule BlockScoutWeb.API.V2.TokenTransferController do
   import BlockScoutWeb.PagingHelper,
     only: [
       delete_parameters_from_next_page_params: 1,
-      token_transfers_types_options: 1
+      token_transfers_types_options: 1,
+      token_transfers_activity_options: 1
     ]
 
   import Explorer.MicroserviceInterfaces.BENS, only: [maybe_preload_ens: 1]
@@ -41,6 +42,7 @@ defmodule BlockScoutWeb.API.V2.TokenTransferController do
         %PagingOptions{paging_options | page_size: page_size + 1}
       end)
       |> Keyword.merge(token_transfers_types_options(params))
+      |> Keyword.merge(token_transfers_activity_options(params))
       |> Keyword.merge(@api_true)
 
     result =
