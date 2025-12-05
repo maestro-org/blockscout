@@ -18,6 +18,10 @@ defmodule BlockScoutWeb.GraphQL.Resolvers.Block do
     end
   end
 
+  def get_by(%Transaction{block_hash: nil}, _, _) do
+    {:ok, nil}
+  end
+
   def get_by(%Transaction{block_hash: hash}, _, _) do
     hash
     |> Chain.hash_to_block(@api_true)
